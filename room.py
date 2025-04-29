@@ -1,3 +1,5 @@
+import json
+
 class Room: # Класс с комнатами
     all = {} # Словарь для хранения комнат
     ENTRY = 1 # Константа с первой комнатой
@@ -18,10 +20,18 @@ class Room: # Класс с комнатами
         print(f">> {self.description}\n")
         print("Возможные действия:")
         for id, action in enumerate(self.actions):
-            print(f"{id+1}) {action.description}")
+            print(f"{id+1} {action.description}")
         while True:
-            command = input("Ваше действие (0 - выход):")
-            if command.isnumeric():
+            command = input("Ваше действие (0 - выход, s - сохранить, o - загрузить):")
+            if command == 's':
+                save_game()
+                print("Игра сохранена!")
+                continue
+            elif command == 'o':
+                load_game()
+                print("Игра загружена!")
+                return -1  # Специальный код для перезагрузки комнаты
+            elif command.isnumeric():
                 command = int(command)
                 if command == 0:
                     print("\n")
@@ -80,6 +90,51 @@ class LeftRoom(Room):
             Action ("Вернуться", Room.ENTRY),
         ] 
 
+def save_game():
+    game_state = {
+        'current_room': current_room,
+        'right_room': {
+            'description': Room.get(Room.RIGHT).description,
+            'actions': [a.description for a in Room.get(Room.RIGHT).actions]
+        },
+        'left_room': {
+            'description': Room.get(Room.LEFT).description,
+            'actions': [a.description for a in Room.get(Room.LEFT).actions]
+        }
+    }
+    with open('save.json', 'w', encoding='utf-8') as f:
+        json.dump(game_state, f, ensure_ascii=False, indent=2)
+
+def load_game():
+    global current_room
+    try:
+        with open('save.json', 'r', encoding='utf-8') as f:
+            data = json.load(f)
+        
+        current_room = data['current_room']
+        
+        # Восстанавливаем состояние правой комнаты
+        right = Room.get(Room.RIGHT)
+        right.description = data['right_room']['description']
+        if 'Открыть сундук' not in data['right_room']['actions']:
+            if hasattr(right, 'actions') and right.actions:
+                right.actions.pop(0)
+        
+        # Восстанавливаем состояние левой комнаты
+        left = Room.get(Room.LEFT)
+        left.description = data['left_room']['description']
+        if 'Отдать трость' in data['left_room']['actions']:
+            left.actions = [
+                Action("Отдать трость", Action.LEFT_GIVE_ITEM),
+                Action("Вернуться", Room.ENTRY),
+            ]
+        elif 'Нет не видел' not in data['left_room']['actions']:
+            left.actions = [
+                Action("Вернуться", Room.ENTRY),
+            ]
+    except FileNotFoundError:
+        print("Сохранение не найдено")
+
 if __name__ == "__main__":
     Room.all = {
         Room.ENTRY: EntryRoom(),
@@ -89,7 +144,9 @@ if __name__ == "__main__":
     current_room = Room.ENTRY
     while current_room: # Чтобы остановить бесконечный цикл нужно нажать сочитание клавиш "Ctrl + C"
         action_id = Room.get(current_room).enter()
-        if action_id == Action.RIGHT_CHEST_OPEN:
+        if action_id == -1:  # Перезагрузка комнаты после загрузки
+            continue
+        elif action_id == Action.RIGHT_CHEST_OPEN:
             Room.get(Room.RIGHT).open_chest()
             Room.get(Room.LEFT).got_item()
         elif action_id == Action.LEFT_GIVE_ITEM:
