@@ -6,7 +6,7 @@ class GameOutput:
     """Класс для дублирования вывода в консоль и окно Tkinter"""
     def __init__(self):
         self.root = tk.Tk()
-        self.root.title("Лабиринт - вывод игры")
+        self.root.title("Лесной Лабиринт")
         self.root.geometry("600x400")
         
         self.text_area = scrolledtext.ScrolledText(self.root, wrap=tk.WORD)
@@ -26,6 +26,56 @@ class GameOutput:
 # Создаем глобальный объект для вывода
 output = GameOutput()
 
+class Player:
+    """Класс игрока с показателями здоровья"""
+    def __init__(self):
+        self.max_health = 100
+        self.health = 100
+        self.is_alive = True
+    
+    def take_damage(self, amount):
+        """Уменьшение здоровья персонажа"""
+        if not self.is_alive:
+            return
+            
+        self.health = max(0, self.health - amount)
+        output.print(f"Вы получили {amount} урона! Здоровье: {self.health}/{self.max_health}")
+        
+        if self.health <= 0:
+            self.die()
+    
+    def heal(self, amount):
+        """Восстановление здоровья"""
+        if not self.is_alive:
+            return
+            
+        self.health = min(self.max_health, self.health + amount)
+        output.print(f"Вы восстановили {amount} здоровья. Теперь у вас {self.health}/{self.max_health}")
+    
+    def die(self):
+        """Обработка смерти персонажа"""
+        self.is_alive = False
+        output.print("\n=== ВЫ ПОГИБЛИ! ===")
+        output.print("Игра завершена. Нажмите 0 для выхода.")
+    
+    def get_health_status(self):
+        """Возвращает текстовое описание состояния здоровья"""
+        if not self.is_alive:
+            return "Мёртв"
+        
+        ratio = self.health / self.max_health
+        if ratio > 0.8:
+            return "Отличное состояние"
+        elif ratio > 0.5:
+            return "Лёгкие ранения"
+        elif ratio > 0.2:
+            return "Тяжело ранен"
+        else:
+            return "При смерти"
+
+# Создаем глобальный объект игрока
+player = Player()
+
 class Room: # Класс с комнатами
     all = {} # Словарь для хранения комнат
     ENTRY = 1 # Константа с первой комнатой
@@ -41,6 +91,9 @@ class Room: # Класс с комнатами
         self.actions = actions
 
     def enter(self):
+        # Показываем состояние здоровья при входе в комнату
+        health_status = player.get_health_status()
+        output.print(f"[Состояние: {health_status}, Здоровье: {player.health}/{player.max_health}]")
         output.print(f">> {self.description}\n")
         output.print("Возможные действия:")
         for id, action in enumerate(self.actions):
@@ -62,6 +115,9 @@ class Room: # Класс с комнатами
                     output.print("\n")
                     return 0
                 elif 0 < command <= len(self.actions):
+                    # Случайный урон при выборе действия (для демонстрации)
+                    if player.is_alive and current_room != Room.ENTRY and command != len(self.actions):
+                        player.take_damage(5)
                     output.print("\n")
                     return self.actions[command-1].param
 
@@ -90,6 +146,8 @@ class RightRoom(Room):
     def open_chest(self):
         output.print('''  Вы открыли сундук.
   В сундуке - ветвистая деревянная трость. Вы взяли ветвистую трость''')
+        # Восстановление здоровья при нахождении предмета
+        player.heal(30)
         self.description = '''Комната с открытым пустым сундуком'''
         self.actions.pop(0)
 
@@ -110,6 +168,8 @@ class LeftRoom(Room):
     
     def give_item(self):
         output.print("  Радостный леший опираясь на свою трость, вприпрыжку ускакал в чащу леса")
+        # Полное исцеление после помощи лешему
+        player.heal(player.max_health)
         self.description = '''Тихая пустынная комната'''
         self.actions = [
             Action("Вернуться", Room.ENTRY),
@@ -125,6 +185,11 @@ def save_game():
         'left_room': {
             'description': Room.get(Room.LEFT).description,
             'actions': [a.description for a in Room.get(Room.LEFT).actions]
+        },
+        'player': {
+            'health': player.health,
+            'max_health': player.max_health,
+            'is_alive': player.is_alive
         }
     }
     with open('save.json', 'w', encoding='utf-8') as f:
@@ -137,6 +202,11 @@ def load_game():
             data = json.load(f)
         
         current_room = data['current_room']
+        
+        # Восстанавливаем состояние игрока
+        player.health = data['player']['health']
+        player.max_health = data['player']['max_health']
+        player.is_alive = data['player']['is_alive']
         
         # Восстанавливаем состояние правой комнаты
         right = Room.get(Room.RIGHT)
@@ -169,7 +239,7 @@ if __name__ == "__main__":
     current_room = Room.ENTRY
     
     try:
-        while current_room: # Чтобы остановить бесконечный цикл нужно нажать сочитание клавиш "Ctrl + C"
+        while current_room and player.is_alive: # Добавили проверку на живой ли игрок
             action_id = Room.get(current_room).enter()
             if action_id == -1: # Перезагрузка комнаты после загрузки
                 continue
@@ -180,5 +250,10 @@ if __name__ == "__main__":
                 Room.get(Room.LEFT).give_item()
             else:
                 current_room = action_id
+        
+        # Если игрок умер, ждем завершения программы
+        while not player.is_alive:
+            output.root.update()
+            
     except KeyboardInterrupt:
         output.root.destroy()
