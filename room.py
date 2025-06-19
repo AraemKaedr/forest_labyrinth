@@ -81,7 +81,7 @@ class Room: # Класс с комнатами
     ENTRY = 1 # Константа с первой комнатой
     LEFT = 2
     RIGHT = 3
-    RIGHT_EMPTY = 4  # Новая комната - пустая перед комнатой с сундуком
+    RIGHT_SIGN = 4  # Комната с предупреждающей табличкой
 
     @staticmethod # Создание функции которую можно вызвать напрямую из класса, без использования объекта
     def get(room_code):
@@ -135,29 +135,33 @@ class EntryRoom(Room):
     def __init__(self):
         super().__init__('''Вход в лабиринт.
    Лестница вниз, от которой есть двери направо и налево''',
-       [ Action("Пойти направо", Room.RIGHT_EMPTY),  # Теперь ведет сначала в пустую комнату
+       [ Action("Пойти направо", Room.RIGHT_SIGN),  # Теперь ведет в комнату с табличкой
          Action("Пойти налево", Room.LEFT), ])
 
-class RightEmptyRoom(Room):
-    """Новая пустая комната перед комнатой с сундуком"""
+class RightSignRoom(Room):
+    """Комната с предупреждающей табличкой перед комнатой с сундуком"""
     def __init__(self):
-        super().__init__('''Пустая каменная комната с высокой потолком.
-   В дальнем углу видна еще одна дверь.''',
-       [ Action("Пойти дальше направо", Room.RIGHT),
-         Action("Вернуться", Room.ENTRY), ])
+        super().__init__('''Каменная комната с высоким потолком. На стене висит старая табличка с надписью.
+   В дальнем углу видна массивная дверь с железными скобами.
+
+   Надпись на табличке гласит:
+   "ОСТОРОЖНО! В следующей комнате обитает жуткий монстр!
+   Но смельчаков, что пройдут дальше, ждет невиданное сокровище!"''',
+       [ Action("Пойти дальше направо (рискнуть)", Room.RIGHT),
+         Action("Вернуться обратно (поступисть по-умному)", Room.ENTRY), ])  # Изменили описания действий для атмосферы
 
 class RightRoom(Room):
     def __init__(self):
-        super().__init__('''Комната с закрытым сундуком''',
+        super().__init__('''Комната с закрытым сундуком.''',
        [ Action("Открыть сундук", Action.RIGHT_CHEST_OPEN),
-         Action("Вернуться", Room.RIGHT_EMPTY), ])  # Теперь возврат в пустую комнату
+         Action("Быстро вернуться", Room.RIGHT_SIGN), ])  # Теперь возврат в комнату с табличкой
 
     def open_chest(self):
         output.print('''  Вы открыли сундук.
   В сундуке - ветвистая деревянная трость. Вы взяли ветвистую трость''')
         # Восстановление здоровья при нахождении предмета
         player.heal(30)
-        self.description = '''Комната с открытым пустым сундуком'''
+        self.description = '''Комната с открытым пустым сундуком.'''
         self.actions.pop(0)
 
 class LeftRoom(Room):
@@ -187,9 +191,9 @@ class LeftRoom(Room):
 def save_game():
     game_state = {
         'current_room': current_room,
-        'right_empty_room': {
-            'description': Room.get(Room.RIGHT_EMPTY).description,
-            'actions': [a.description for a in Room.get(Room.RIGHT_EMPTY).actions]
+        'right_sign_room': {
+            'description': Room.get(Room.RIGHT_SIGN).description,
+            'actions': [a.description for a in Room.get(Room.RIGHT_SIGN).actions]
         },
         'right_room': {
             'description': Room.get(Room.RIGHT).description,
@@ -221,9 +225,9 @@ def load_game():
         player.max_health = data['player']['max_health']
         player.is_alive = data['player']['is_alive']
         
-        # Восстанавливаем состояние пустой правой комнаты
-        right_empty = Room.get(Room.RIGHT_EMPTY)
-        right_empty.description = data['right_empty_room']['description']
+        # Восстанавливаем состояние комнаты с табличкой
+        right_sign = Room.get(Room.RIGHT_SIGN)
+        right_sign.description = data['right_sign_room']['description']
         
         # Восстанавливаем состояние правой комнаты с сундуком
         right = Room.get(Room.RIGHT)
@@ -252,7 +256,7 @@ if __name__ == "__main__":
         Room.ENTRY: EntryRoom(),
         Room.LEFT: LeftRoom(),
         Room.RIGHT: RightRoom(),
-        Room.RIGHT_EMPTY: RightEmptyRoom(),  # Добавляем новую комнату
+        Room.RIGHT_SIGN: RightSignRoom(),  # Используем новое имя класса
     }
     current_room = Room.ENTRY
     
