@@ -33,7 +33,7 @@ class Player:
         self.max_health = 100
         self.health = 100
         self.is_alive = True
-        self.has_sword = False  # Добавим флаг наличия меча для боя с монстром (меч увеличивает урон на +10)
+        self.has_sword = False  # Флаг наличия меча для боя с монстром (меч увеличивает урон на +10)
     
     def take_damage(self, amount):
         """Уменьшение здоровья персонажа"""
@@ -86,6 +86,8 @@ class Room: # Класс с комнатами
     RIGHT_SIGN = 4  # Комната с предупреждающей табличкой
     MONSTER_ROOM = 5  # Комната с монстром
     RIGHT_CHEST = 6  # Комната с сундуком
+    SWORD_SIGN = 7  # Комната с информацией о мече
+    SWORD_ROOM = 8  # Комната с мечом
 
     @staticmethod # Создание функции которую можно вызвать напрямую из класса, без использования объекта
     def get(room_code):
@@ -125,11 +127,14 @@ class Room: # Класс с комнатами
                 elif 1 <= command <= len(self.actions):
                     output.print("\n")
                     return self.actions[command-1].param
+            else:
+                output.print("Неизвестная команда. Попробуйте еще раз.")
 
 class Action:
     RIGHT_CHEST_OPEN = 1000
     LEFT_GIVE_ITEM = 1001
-    DEFEAT_MONSTER = 1002  # Новое действие - победа над монстром
+    DEFEAT_MONSTER = 1002  # Действие - победа над монстром
+    GET_SWORD = 1003  # Действие - получение меча
 
     def __init__(self, description, param, result=''):
         self.description = description
@@ -139,9 +144,58 @@ class Action:
 class EntryRoom(Room):
     def __init__(self):
         super().__init__('''Вход в лабиринт.
-   Лестница вниз, от которой есть двери направо и налево''',
+   Лестница вниз, от которой есть двери направо и налево.
+   Также есть темный проход вниз по скрипучей лестнице.''',
        [ Action("Пойти направо", Room.RIGHT_SIGN),  # Теперь ведет в комнату с табличкой
-         Action("Пойти налево", Room.LEFT), ])
+         Action("Пойти налево", Room.LEFT),
+         Action("Спуститься вниз", Room.SWORD_SIGN)])
+
+class SwordSignRoom(Room):
+    """Комната с информацией о мече"""
+    def __init__(self):
+        super().__init__(
+            '''Маленькая каморка с низким потолком. На стене висит потрепанный пергамент.
+            
+   Надпись гласит:
+   "Ищите меч света в комнате справа.
+   Только он сможет победить тьму этого лабиринта!"''',
+            [
+                Action("Пойти направо", Room.SWORD_ROOM),
+                Action("Вернуться наверх", Room.ENTRY)
+            ]
+        )
+
+class SwordRoom(Room):
+    """Комната с мечом"""
+    def __init__(self):
+        super().__init__(
+            '''Крошечная комната, освещенная таинственным светом.
+   В центре на каменном пьедестале лежит сияющий меч.''',
+            [
+                Action("Взять меч", Action.GET_SWORD),
+                Action("Вернуться", Room.SWORD_SIGN)
+            ]
+        )
+        self.sword_taken = False
+
+    def enter(self):
+        if self.sword_taken:
+            self.description = '''Крошечная комната с пустым пьедесталом.
+   Меч уже у вас!'''
+            self.actions = [Action("Вернуться", Room.SWORD_SIGN)]
+        
+        return super().enter()
+
+    def take_sword(self):
+        """Логика взятия меча"""
+        output.print('''  Вы берете меч в руки - он излучает тепло и свет.
+  Чувствуете, как сила наполняет вас!''')
+        player.has_sword = True
+        self.sword_taken = True
+        self.description = '''Крошечная комната с пустым пьедесталом.
+   Меч уже у вас!'''
+        self.actions = [Action("Вернуться", Room.SWORD_SIGN)]
+        output.print("Теперь ваши атаки будут сильнее!")
 
 class RightSignRoom(Room):
     """Комната с предупреждающей табличкой перед комнатой с монстром"""
@@ -153,7 +207,7 @@ class RightSignRoom(Room):
    "ОСТОРОЖНО! В следующей комнате обитает жуткий Упырь!
    Но смельчаков, что победят его, ждет невиданное сокровище!"''',
        [ Action("Пойти дальше вниз (рискнуть)", Room.MONSTER_ROOM),
-         Action("Вернуться обратно (поступить по-умному)", Room.ENTRY), ])
+         Action("Вернуться обратно", Room.ENTRY), ])
 
 class MonsterRoom(Room):
     """Комната с монстром Упырем"""
@@ -162,6 +216,7 @@ class MonsterRoom(Room):
    Его красные глаза горят в темноте, а длинные когти скребут по камням.''',
        [ Action("Атаковать монстра", Room.MONSTER_ROOM),  # Будем обрабатывать отдельно
          Action("Попытаться убежать", Room.RIGHT_SIGN), ])  # Бегство возвращает в комнату с табличкой
+        self.monster_defeated = False
 
     def enter(self):
         """Особая логика enter для комнаты с монстром и обработки боя"""
@@ -170,31 +225,20 @@ class MonsterRoom(Room):
         output.print(f">> {self.description}\n")
         
         # Проверяем, жив ли монстр (если нет - пропускаем бой)
-        if hasattr(self, 'monster_defeated') and self.monster_defeated:
+        if self.monster_defeated:
             output.print("Тело Упыря лежит на полу, издавая зловоние.")
             output.print("Возможные действия:")
             output.print("1 Пройти дальше в комнату с сокровищем")
             output.print("2 Вернуться")
             
             while True:
-                command = input("Ваше действие (0 - выход, s - сохранить, o - загрузить):").strip().lower()
-                if command == 's':
-                    save_game()
-                    output.print("Игра сохранена!")
-                    continue
-                elif command == 'o':
-                    load_game()
-                    output.print("Игра загружена!")
-                    return -1
-                elif command.isnumeric():
-                    command = int(command)
-                    if command == 0:
-                        output.print("\n")
-                        return 0
-                    elif command == 1:
-                        return Room.RIGHT_CHEST  # После победы можно пройти к сундуку
-                    elif command == 2:
-                        return Room.RIGHT_SIGN
+                cmd = input("Ваш выбор: ").strip().lower()
+                if cmd == '1':
+                    return Room.RIGHT_CHEST
+                elif cmd == '2':
+                    return Room.RIGHT_SIGN
+                else:
+                    output.print("Неверный ввод. Попробуйте еще раз.")
         else:
             # Если монстр жив - начинаем бой
             return self.fight_monster()
@@ -216,7 +260,7 @@ class MonsterRoom(Room):
                 player_damage = random.randint(5, 15)
                 if player.has_sword:
                     player_damage += 10  # Меч увеличивает урон
-                    output.print(f"Вы бьете мечом и наносите {player_damage} урона! ({player_damage}+10)")
+                    output.print(f"Вы бьете мечом и наносите {player_damage} урона! ({player_damage-10}+10)")
                 else:
                     output.print(f"Вы бьете кулаками и наносите {player_damage} урона!")
                 monster_health -= player_damage
@@ -251,7 +295,7 @@ class MonsterRoom(Room):
             return -1  # Перезагрузить комнату
 
 class RightChestRoom(Room):
-    """Комната с сундуком, перенесенная справа от комнаты с монстром"""
+    """Комната с сундуком сокровищ"""
     def __init__(self):
         super().__init__('''Небольшая комната с массивным сундуком посередине.
    Сундук украшен замысловатой резьбой и выглядит очень старым.''',
@@ -262,7 +306,7 @@ class RightChestRoom(Room):
     def open_chest(self):
         output.print('''  Вы открыли сундук.
   Внутри вы находите:
-  - Ветвистая деревянная трость украшенная необычной ресьбой
+  - Ветвистая деревянная трость украшенная необычной резьбой
   - Целебное зелье (+30 здоровья)
   Вы выпиваете зелье.''')
         
@@ -306,6 +350,15 @@ def save_game():
     """Сохранение состояния игры"""
     game_state = {
         'current_room': current_room,
+        'sword_sign_room': {
+            'description': Room.get(Room.SWORD_SIGN).description,
+            'actions': [a.description for a in Room.get(Room.SWORD_SIGN).actions]
+        },
+        'sword_room': {
+            'description': Room.get(Room.SWORD_ROOM).description,
+            'actions': [a.description for a in Room.get(Room.SWORD_ROOM).actions],
+            'sword_taken': Room.get(Room.SWORD_ROOM).sword_taken
+        },
         'right_sign_room': {
             'description': Room.get(Room.RIGHT_SIGN).description,
             'actions': [a.description for a in Room.get(Room.RIGHT_SIGN).actions]
@@ -313,7 +366,7 @@ def save_game():
         'monster_room': {
             'description': Room.get(Room.MONSTER_ROOM).description,
             'actions': [a.description for a in Room.get(Room.MONSTER_ROOM).actions],
-            'monster_defeated': hasattr(Room.get(Room.MONSTER_ROOM), 'monster_defeated') and Room.get(Room.MONSTER_ROOM).monster_defeated
+            'monster_defeated': Room.get(Room.MONSTER_ROOM).monster_defeated
         },
         'right_chest_room': {
             'description': Room.get(Room.RIGHT_CHEST).description,
@@ -349,22 +402,28 @@ def load_game():
         player.is_alive = data['player']['is_alive']
         player.has_sword = data['player'].get('has_sword', False)
         
+        # Восстанавливаем состояние комнаты с мечем
+        Room.get(Room.SWORD_SIGN).description = data['sword_sign_room']['description']
+        sword_room = Room.get(Room.SWORD_ROOM)
+        sword_room.description = data['sword_room']['description']
+        sword_room.sword_taken = data['sword_room']['sword_taken']
+        if sword_room.sword_taken:
+            sword_room.actions = [Action("Вернуться", Room.SWORD_SIGN)]
+
         # Восстанавливаем состояние комнаты с табличкой
         Room.get(Room.RIGHT_SIGN).description = data['right_sign_room']['description']
         
         # Восстанавливаем состояние комнаты с монстром
         monster_room = Room.get(Room.MONSTER_ROOM)
         monster_room.description = data['monster_room']['description']
-        if data['monster_room'].get('monster_defeated', False):
-            monster_room.monster_defeated = True
+        monster_room.monster_defeated = data['monster_room']['monster_defeated']
         
         # Восстанавливаем состояние комнаты с сундуком
         right_chest = Room.get(Room.RIGHT_CHEST)
         right_chest.description = data['right_chest_room']['description']
         right_chest.chest_opened = data['right_chest_room']['chest_opened']
         if right_chest.chest_opened and len(right_chest.actions) > 0:
-            if hasattr(right_chest, 'actions') and right_chest.actions:
-                right_chest.actions.pop(0)
+            right_chest.actions.pop(0)
         
         # Восстанавливаем состояние левой комнаты
         left_room = Room.get(Room.LEFT)
@@ -389,8 +448,10 @@ if __name__ == "__main__":
         Room.ENTRY: EntryRoom(),
         Room.LEFT: LeftRoom(),
         Room.RIGHT_SIGN: RightSignRoom(),
-        Room.MONSTER_ROOM: MonsterRoom(),  # Новая комната с монстром
+        Room.MONSTER_ROOM: MonsterRoom(),  # Комната с монстром
         Room.RIGHT_CHEST: RightChestRoom(),
+        Room.SWORD_SIGN: SwordSignRoom(),  # Новая комната с информацией о наличии меча
+        Room.SWORD_ROOM: SwordRoom()       # Комната с мечом
     }
     current_room = Room.ENTRY
     
@@ -402,11 +463,12 @@ if __name__ == "__main__":
                 continue
             elif action_id == Action.RIGHT_CHEST_OPEN:
                 Room.get(Room.RIGHT_CHEST).open_chest()
-                Room.get(Room.LEFT).got_item()
             elif action_id == Action.LEFT_GIVE_ITEM:
                 Room.get(Room.LEFT).give_item()
             elif action_id == Action.DEFEAT_MONSTER:
                 Room.get(Room.MONSTER_ROOM).monster_defeated = True
+            elif action_id == Action.GET_SWORD:
+                Room.get(Room.SWORD_ROOM).take_sword()
             else:
                 current_room = action_id
         
