@@ -1,6 +1,7 @@
 import json
 import tkinter as tk
 from tkinter import scrolledtext
+import random  # Добавим для боя с монстром
 
 class GameOutput:
     """Класс для дублирования вывода в консоль и окно Tkinter"""
@@ -32,6 +33,7 @@ class Player:
         self.max_health = 100
         self.health = 100
         self.is_alive = True
+        self.has_sword = False  # Добавим флаг наличия меча для боя с монстром (меч увеличивает урон на +10)
     
     def take_damage(self, amount):
         """Уменьшение здоровья персонажа"""
@@ -82,6 +84,8 @@ class Room: # Класс с комнатами
     LEFT = 2
     RIGHT = 3
     RIGHT_SIGN = 4  # Комната с предупреждающей табличкой
+    MONSTER_ROOM = 5  # Новая комната с монстром
+    RIGHT_CHEST = 6  # Перенесем комнату с сундуком в отдельную константу
 
     @staticmethod # Создание функции которую можно вызвать напрямую из класса, без использования объекта
     def get(room_code):
@@ -125,6 +129,7 @@ class Room: # Класс с комнатами
 class Action:
     RIGHT_CHEST_OPEN = 1000
     LEFT_GIVE_ITEM = 1001
+    DEFEAT_MONSTER = 1002  # Новое действие - победа над монстром
 
     def __init__(self, description, param, result=''):
         self.description = description
@@ -139,30 +144,132 @@ class EntryRoom(Room):
          Action("Пойти налево", Room.LEFT), ])
 
 class RightSignRoom(Room):
-    """Комната с предупреждающей табличкой перед комнатой с сундуком"""
+    """Комната с предупреждающей табличкой перед комнатой с монстром"""
     def __init__(self):
         super().__init__('''Каменная комната с высоким потолком. На стене висит старая табличка с надписью.
    В дальнем углу видна массивная дверь с железными скобами.
 
    Надпись на табличке гласит:
-   "ОСТОРОЖНО! В следующей комнате обитает жуткий монстр!
-   Но смельчаков, что пройдут дальше, ждет невиданное сокровище!"''',
-       [ Action("Пойти дальше направо (рискнуть)", Room.RIGHT),
-         Action("Вернуться обратно (поступисть по-умному)", Room.ENTRY), ])  # Изменили описания действий для атмосферы
+   "ОСТОРОЖНО! В следующей комнате обитает жуткий Упырь!
+   Но смельчаков, что победят его, ждет невиданное сокровище!"''',
+       [ Action("Пойти дальше вниз (рискнуть)", Room.MONSTER_ROOM),
+         Action("Вернуться обратно (поступить по-умному)", Room.ENTRY), ])
 
-class RightRoom(Room):
+class MonsterRoom(Room):
+    """Комната с монстром Упырем"""
     def __init__(self):
-        super().__init__('''Комната с закрытым сундуком.''',
+        super().__init__('''Темная сырая комната с костями на полу. В центре стоит жуткий Упырь!
+   Его красные глаза горят в темноте, а длинные когти скребут по камням.''',
+       [ Action("Атаковать монстра", Room.MONSTER_ROOM),  # Будем обрабатывать отдельно
+         Action("Попытаться убежать", Room.RIGHT_SIGN), ])  # Бегство возвращает в комнату с табличкой
+
+    def enter(self):
+        # Переопределяем enter для специальной обработки боя
+        health_status = player.get_health_status()
+        output.print(f"[Состояние: {health_status}, Здоровье: {player.health}/{player.max_health}]")
+        output.print(f">> {self.description}\n")
+        
+        # Проверяем, жив ли монстр (если нет - пропускаем бой)
+        if hasattr(self, 'monster_defeated') and self.monster_defeated:
+            output.print("Тело Упыря лежит на полу, издавая зловоние.")
+            output.print("Возможные действия:")
+            output.print("1 Пройти дальше в комнату с сокровищем")
+            output.print("2 Вернуться")
+            
+            while True:
+                command = input("Ваше действие (0 - выход, s - сохранить, o - загрузить):")
+                if command == 's':
+                    save_game()
+                    output.print("Игра сохранена!")
+                    continue
+                elif command == 'o':
+                    load_game()
+                    output.print("Игра загружена!")
+                    return -1
+                elif command.isnumeric():
+                    command = int(command)
+                    if command == 0:
+                        output.print("\n")
+                        return 0
+                    elif command == 1:
+                        return Room.RIGHT_CHEST  # После победы можно пройти к сундуку
+                    elif command == 2:
+                        return Room.RIGHT_SIGN
+        else:
+            # Если монстр жив - начинаем бой
+            return self.fight_monster()
+
+    def fight_monster(self):
+        """Обработка боя с Упырем"""
+        monster_health = 50  # Здоровье монстра
+        
+        output.print("=== БОЙ С УПЫРЕМ ===")
+        output.print(f"Упырь: {monster_health} здоровья | Вы: {player.health} здоровья")
+        
+        while monster_health > 0 and player.is_alive:
+            output.print("\n1. Атаковать")
+            output.print("2. Попытаться убежать (50% шанс)")
+            
+            choice = input("Ваш выбор: ")
+            if choice == '1':
+                # Игрок атакует
+                player_damage = random.randint(5, 15)
+                if player.has_sword:
+                    player_damage += 10  # Меч увеличивает урон
+                    output.print(f"Вы бьете мечом и наносите {player_damage} урона! ({player_damage}+10)")
+                else:
+                    output.print(f"Вы бьете кулаками и наносите {player_damage} урона!")
+                monster_health -= player_damage
+                
+                # Монстр атакует в ответ
+                if monster_health > 0:
+                    monster_damage = random.randint(8, 12)
+                    player.take_damage(monster_damage)
+                    output.print(f"Упырь царапает вас, нанося {monster_damage} урона!")
+                
+                output.print(f"Упырь: {max(0, monster_health)} здоровья | Вы: {player.health} здоровья")
+            
+            elif choice == '2':
+                # Попытка убежать
+                if random.random() < 0.5:  # 50% шанс побега
+                    output.print("Вы успешно убежали от Упыря!")
+                    return Room.RIGHT_SIGN
+                else:
+                    output.print("Упырь перехватил вас!")
+                    monster_damage = random.randint(10, 15)
+                    player.take_damage(monster_damage)
+                    output.print(f"Упырь кусает вас, нанося {monster_damage} урона!")
+            
+            if player.health <= 0:
+                return 0  # Игрок умер
+        
+        if monster_health <= 0:
+            output.print("\n=== ВЫ ПОБЕДИЛИ УПЫРЯ! ===")
+            output.print("Теперь вы можете пройти в комнату с сокровищем!")
+            self.monster_defeated = True
+            self.description = '''Темная комната с трупом Упыря. Дверь в следующую комнату теперь открыта.'''
+            return -1  # Перезагрузить комнату
+
+class RightChestRoom(Room):
+    """Комната с сундуком, перенесенная справа от комнаты с монстром"""
+    def __init__(self):
+        super().__init__('''Небольшая комната с массивным сундуком посередине.
+   Сундук украшен замысловатой резьбой и выглядит очень старым.''',
        [ Action("Открыть сундук", Action.RIGHT_CHEST_OPEN),
-         Action("Быстро вернуться", Room.RIGHT_SIGN), ])  # Теперь возврат в комнату с табличкой
+         Action("Вернуться", Room.MONSTER_ROOM), ])
 
     def open_chest(self):
         output.print('''  Вы открыли сундук.
-  В сундуке - ветвистая деревянная трость. Вы взяли ветвистую трость''')
-        # Восстановление здоровья при нахождении предмета
+  Внутри вы находите:
+  - Ветвистая деревянная трость украшенная необычной ресьбой
+  - Целебное зелье (+30 здоровья)
+  Вы выпиваете зелье.''')
+        
         player.heal(30)
+
         self.description = '''Комната с открытым пустым сундуком.'''
         self.actions.pop(0)
+        output.print("Вы получили ветвистую трость и немного подлечились зельем здоровья!")
 
 class LeftRoom(Room):
     def __init__(self):
@@ -195,9 +302,14 @@ def save_game():
             'description': Room.get(Room.RIGHT_SIGN).description,
             'actions': [a.description for a in Room.get(Room.RIGHT_SIGN).actions]
         },
-        'right_room': {
-            'description': Room.get(Room.RIGHT).description,
-            'actions': [a.description for a in Room.get(Room.RIGHT).actions]
+        'monster_room': {
+            'description': Room.get(Room.MONSTER_ROOM).description,
+            'actions': [a.description for a in Room.get(Room.MONSTER_ROOM).actions],
+            'monster_defeated': hasattr(Room.get(Room.MONSTER_ROOM), 'monster_defeated') and Room.get(Room.MONSTER_ROOM).monster_defeated
+        },
+        'right_chest_room': {
+            'description': Room.get(Room.RIGHT_CHEST).description,
+            'actions': [a.description for a in Room.get(Room.RIGHT_CHEST).actions]
         },
         'left_room': {
             'description': Room.get(Room.LEFT).description,
@@ -206,7 +318,8 @@ def save_game():
         'player': {
             'health': player.health,
             'max_health': player.max_health,
-            'is_alive': player.is_alive
+            'is_alive': player.is_alive,
+            'has_sword': player.has_sword
         }
     }
     with open('save.json', 'w', encoding='utf-8') as f:
@@ -224,17 +337,24 @@ def load_game():
         player.health = data['player']['health']
         player.max_health = data['player']['max_health']
         player.is_alive = data['player']['is_alive']
+        player.has_sword = data['player'].get('has_sword', False)
         
         # Восстанавливаем состояние комнаты с табличкой
         right_sign = Room.get(Room.RIGHT_SIGN)
         right_sign.description = data['right_sign_room']['description']
         
-        # Восстанавливаем состояние правой комнаты с сундуком
-        right = Room.get(Room.RIGHT)
-        right.description = data['right_room']['description']
-        if 'Открыть сундук' not in data['right_room']['actions']:
-            if hasattr(right, 'actions') and right.actions:
-                right.actions.pop(0)
+        # Восстанавливаем состояние комнаты с монстром
+        monster_room = Room.get(Room.MONSTER_ROOM)
+        monster_room.description = data['monster_room']['description']
+        if data['monster_room'].get('monster_defeated', False):
+            monster_room.monster_defeated = True
+        
+        # Восстанавливаем состояние комнаты с сундуком
+        right_chest = Room.get(Room.RIGHT_CHEST)
+        right_chest.description = data['right_chest_room']['description']
+        if 'Открыть сундук' not in data['right_chest_room']['actions']:
+            if hasattr(right_chest, 'actions') and right_chest.actions:
+                right_chest.actions.pop(0)
         
         # Восстанавливаем состояние левой комнаты
         left = Room.get(Room.LEFT)
@@ -255,8 +375,9 @@ if __name__ == "__main__":
     Room.all = {
         Room.ENTRY: EntryRoom(),
         Room.LEFT: LeftRoom(),
-        Room.RIGHT: RightRoom(),
-        Room.RIGHT_SIGN: RightSignRoom(),  # Используем новое имя класса
+        Room.RIGHT_SIGN: RightSignRoom(),
+        Room.MONSTER_ROOM: MonsterRoom(),  # Новая комната с монстром
+        Room.RIGHT_CHEST: RightChestRoom(),
     }
     current_room = Room.ENTRY
     
@@ -266,10 +387,12 @@ if __name__ == "__main__":
             if action_id == -1: # Перезагрузка комнаты после загрузки
                 continue
             elif action_id == Action.RIGHT_CHEST_OPEN:
-                Room.get(Room.RIGHT).open_chest()
+                Room.get(Room.RIGHT_CHEST).open_chest()
                 Room.get(Room.LEFT).got_item()
             elif action_id == Action.LEFT_GIVE_ITEM:
                 Room.get(Room.LEFT).give_item()
+            elif action_id == Action.DEFEAT_MONSTER:
+                Room.get(Room.MONSTER_ROOM).monster_defeated = True
             else:
                 current_room = action_id
         
