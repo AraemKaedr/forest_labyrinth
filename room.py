@@ -79,16 +79,17 @@ class Player:
 player = Player()
 
 class Room: # Класс с комнатами
-    all = {} # Словарь для хранения комнат
-    ENTRY = 1 # Константа с первой комнатой
+    all = {} # Словарь для хранения всех комнат
+    ENTRY = 1  # Константа для начальной комнаты
     LEFT = 2
     RIGHT = 3
     RIGHT_SIGN = 4  # Комната с предупреждающей табличкой
-    MONSTER_ROOM = 5  # Новая комната с монстром
-    RIGHT_CHEST = 6  # Перенесем комнату с сундуком в отдельную константу
+    MONSTER_ROOM = 5  # Комната с монстром
+    RIGHT_CHEST = 6  # Комната с сундуком
 
     @staticmethod # Создание функции которую можно вызвать напрямую из класса, без использования объекта
     def get(room_code):
+        """Получение комнаты по коду"""
         return Room.all[room_code]
     
     def __init__(self, description="??? нет описания ???", actions=[]):
@@ -96,6 +97,7 @@ class Room: # Класс с комнатами
         self.actions = actions
 
     def enter(self):
+        """Вход в комнату - основная логика взаимодействия"""
         # Показываем состояние здоровья при входе в комнату
         health_status = player.get_health_status()
         output.print(f"[Состояние: {health_status}, Здоровье: {player.health}/{player.max_health}]")
@@ -103,9 +105,10 @@ class Room: # Класс с комнатами
         output.print("Возможные действия:")
         for id, action in enumerate(self.actions):
             output.print(f"{id+1} {action.description}")
-            
+        
+        # Обработка ввода пользователя
         while True:
-            command = input("Ваше действие (0 - выход, s - сохранить, o - загрузить):")
+            command = input("Ваше действие (0 - выход, s - сохранить, o - загрузить): ").strip().lower()
             if command == 's':
                 save_game()
                 output.print("Игра сохранена!")
@@ -114,15 +117,12 @@ class Room: # Класс с комнатами
                 load_game()
                 output.print("Игра загружена!")
                 return -1 # Специальный код для перезагрузки комнаты
-            elif command.isnumeric():
+            elif command.isdigit():
                 command = int(command)
                 if command == 0:
                     output.print("\n")
                     return 0
-                elif 0 < command <= len(self.actions):
-                    # Случайный урон при выборе действия (для демонстрации)
-                    if player.is_alive and current_room != Room.ENTRY and command != len(self.actions):
-                        player.take_damage(5)
+                elif 1 <= command <= len(self.actions):
                     output.print("\n")
                     return self.actions[command-1].param
 
@@ -164,7 +164,7 @@ class MonsterRoom(Room):
          Action("Попытаться убежать", Room.RIGHT_SIGN), ])  # Бегство возвращает в комнату с табличкой
 
     def enter(self):
-        # Переопределяем enter для специальной обработки боя
+        """Особая логика enter для комнаты с монстром и обработки боя"""
         health_status = player.get_health_status()
         output.print(f"[Состояние: {health_status}, Здоровье: {player.health}/{player.max_health}]")
         output.print(f">> {self.description}\n")
@@ -177,7 +177,7 @@ class MonsterRoom(Room):
             output.print("2 Вернуться")
             
             while True:
-                command = input("Ваше действие (0 - выход, s - сохранить, o - загрузить):")
+                command = input("Ваше действие (0 - выход, s - сохранить, o - загрузить):").strip().lower()
                 if command == 's':
                     save_game()
                     output.print("Игра сохранена!")
@@ -210,7 +210,7 @@ class MonsterRoom(Room):
             output.print("\n1. Атаковать")
             output.print("2. Попытаться убежать (50% шанс)")
             
-            choice = input("Ваш выбор: ")
+            choice = input("Ваш выбор: ").strip().lower()
             if choice == '1':
                 # Игрок атакует
                 player_damage = random.randint(5, 15)
@@ -257,6 +257,7 @@ class RightChestRoom(Room):
    Сундук украшен замысловатой резьбой и выглядит очень старым.''',
        [ Action("Открыть сундук", Action.RIGHT_CHEST_OPEN),
          Action("Вернуться", Room.MONSTER_ROOM), ])
+        self.chest_opened = False
 
     def open_chest(self):
         output.print('''  Вы открыли сундук.
@@ -266,12 +267,15 @@ class RightChestRoom(Room):
   Вы выпиваете зелье.''')
         
         player.heal(30)
-
+        self.chest_opened = True
         self.description = '''Комната с открытым пустым сундуком.'''
-        self.actions.pop(0)
+        self.actions.pop(0) # Убираем действие "Открыть сундук"
+        # Даем игроку предмет для лешего
+        Room.get(Room.LEFT).got_item()
         output.print("Вы получили ветвистую трость и немного подлечились зельем здоровья!")
 
 class LeftRoom(Room):
+    """Комната с лешим"""
     def __init__(self):
         super().__init__('''В комнате сидит старый леший
    Леший: "Прииивееет...... Тыы хтоооо? Виииделлл мооою троооость?"''',
@@ -279,6 +283,7 @@ class LeftRoom(Room):
          Action("Вернуться", Room.ENTRY), ])
 
     def got_item(self):
+        """Обновляем комнату после получения трости"""
         self.description = '''Старый леший с радостью смотрит на ветвистая деревянная трость
   Ооооооо.... Моооая трооость вернууууулась! Дааай!!!'''
         self.actions = [
@@ -287,7 +292,9 @@ class LeftRoom(Room):
         ]
     
     def give_item(self):
-        output.print("  Радостный леший опираясь на свою трость, вприпрыжку ускакал в чащу леса")
+        """Отдаем трость лешему"""
+        output.print('''  Леший в благодарность, полностью излечивает игрока.
+  После чего с широкой улыбкой радостный леший опираясь на свою трость, вприпрыжку ускакивает в чащу леса''')
         # Полное исцеление после помощи лешему
         player.heal(player.max_health)
         self.description = '''Тихая пустынная комната'''
@@ -296,6 +303,7 @@ class LeftRoom(Room):
         ]
 
 def save_game():
+    """Сохранение состояния игры"""
     game_state = {
         'current_room': current_room,
         'right_sign_room': {
@@ -309,7 +317,8 @@ def save_game():
         },
         'right_chest_room': {
             'description': Room.get(Room.RIGHT_CHEST).description,
-            'actions': [a.description for a in Room.get(Room.RIGHT_CHEST).actions]
+            'actions': [a.description for a in Room.get(Room.RIGHT_CHEST).actions],
+            'chest_opened': Room.get(Room.RIGHT_CHEST).chest_opened
         },
         'left_room': {
             'description': Room.get(Room.LEFT).description,
@@ -326,6 +335,7 @@ def save_game():
         json.dump(game_state, f, ensure_ascii=False, indent=2)
 
 def load_game():
+    """Загрузка сохраненной игры"""
     global current_room
     try:
         with open('save.json', 'r', encoding='utf-8') as f:
@@ -340,8 +350,7 @@ def load_game():
         player.has_sword = data['player'].get('has_sword', False)
         
         # Восстанавливаем состояние комнаты с табличкой
-        right_sign = Room.get(Room.RIGHT_SIGN)
-        right_sign.description = data['right_sign_room']['description']
+        Room.get(Room.RIGHT_SIGN).description = data['right_sign_room']['description']
         
         # Восстанавливаем состояние комнаты с монстром
         monster_room = Room.get(Room.MONSTER_ROOM)
@@ -352,26 +361,30 @@ def load_game():
         # Восстанавливаем состояние комнаты с сундуком
         right_chest = Room.get(Room.RIGHT_CHEST)
         right_chest.description = data['right_chest_room']['description']
-        if 'Открыть сундук' not in data['right_chest_room']['actions']:
+        right_chest.chest_opened = data['right_chest_room']['chest_opened']
+        if right_chest.chest_opened and len(right_chest.actions) > 0:
             if hasattr(right_chest, 'actions') and right_chest.actions:
                 right_chest.actions.pop(0)
         
         # Восстанавливаем состояние левой комнаты
-        left = Room.get(Room.LEFT)
-        left.description = data['left_room']['description']
+        left_room = Room.get(Room.LEFT)
+        left_room.description = data['left_room']['description']
         if 'Отдать трость' in data['left_room']['actions']:
-            left.actions = [
+            left_room.actions = [
                 Action("Отдать трость", Action.LEFT_GIVE_ITEM),
                 Action("Вернуться", Room.ENTRY),
             ]
-        elif 'Нет не видел' not in data['left_room']['actions']:
-            left.actions = [
+        elif len(left_room.actions) > 1 and 'Нет не видел' not in data['left_room']['actions']:
+            left_room.actions = [
                 Action("Вернуться", Room.ENTRY),
             ]
     except FileNotFoundError:
         output.print("Сохранение не найдено")
+    except Exception as e:
+        output.print(f"Ошибка при загрузке: {str(e)}")
 
 if __name__ == "__main__":
+    # Инициализация всех комнат
     Room.all = {
         Room.ENTRY: EntryRoom(),
         Room.LEFT: LeftRoom(),
@@ -382,6 +395,7 @@ if __name__ == "__main__":
     current_room = Room.ENTRY
     
     try:
+        # Основной игровой цикл
         while current_room and player.is_alive: # Добавили проверку на живой ли игрок
             action_id = Room.get(current_room).enter()
             if action_id == -1: # Перезагрузка комнаты после загрузки
@@ -396,7 +410,7 @@ if __name__ == "__main__":
             else:
                 current_room = action_id
         
-        # Если игрок умер, ждем завершения программы
+        # Если игрок умер, ждем выхода из программы
         while not player.is_alive:
             output.root.update()
             
