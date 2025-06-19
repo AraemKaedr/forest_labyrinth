@@ -81,6 +81,7 @@ class Room: # Класс с комнатами
     ENTRY = 1 # Константа с первой комнатой
     LEFT = 2
     RIGHT = 3
+    RIGHT_EMPTY = 4  # Новая комната - пустая перед комнатой с сундуком
 
     @staticmethod # Создание функции которую можно вызвать напрямую из класса, без использования объекта
     def get(room_code):
@@ -134,14 +135,22 @@ class EntryRoom(Room):
     def __init__(self):
         super().__init__('''Вход в лабиринт.
    Лестница вниз, от которой есть двери направо и налево''',
-       [ Action("Пойти направо", Room.RIGHT),
+       [ Action("Пойти направо", Room.RIGHT_EMPTY),  # Теперь ведет сначала в пустую комнату
          Action("Пойти налево", Room.LEFT), ])
+
+class RightEmptyRoom(Room):
+    """Новая пустая комната перед комнатой с сундуком"""
+    def __init__(self):
+        super().__init__('''Пустая каменная комната с высокой потолком.
+   В дальнем углу видна еще одна дверь.''',
+       [ Action("Пойти дальше направо", Room.RIGHT),
+         Action("Вернуться", Room.ENTRY), ])
 
 class RightRoom(Room):
     def __init__(self):
         super().__init__('''Комната с закрытым сундуком''',
        [ Action("Открыть сундук", Action.RIGHT_CHEST_OPEN),
-         Action("Вернуться", Room.ENTRY), ])
+         Action("Вернуться", Room.RIGHT_EMPTY), ])  # Теперь возврат в пустую комнату
 
     def open_chest(self):
         output.print('''  Вы открыли сундук.
@@ -178,6 +187,10 @@ class LeftRoom(Room):
 def save_game():
     game_state = {
         'current_room': current_room,
+        'right_empty_room': {
+            'description': Room.get(Room.RIGHT_EMPTY).description,
+            'actions': [a.description for a in Room.get(Room.RIGHT_EMPTY).actions]
+        },
         'right_room': {
             'description': Room.get(Room.RIGHT).description,
             'actions': [a.description for a in Room.get(Room.RIGHT).actions]
@@ -208,7 +221,11 @@ def load_game():
         player.max_health = data['player']['max_health']
         player.is_alive = data['player']['is_alive']
         
-        # Восстанавливаем состояние правой комнаты
+        # Восстанавливаем состояние пустой правой комнаты
+        right_empty = Room.get(Room.RIGHT_EMPTY)
+        right_empty.description = data['right_empty_room']['description']
+        
+        # Восстанавливаем состояние правой комнаты с сундуком
         right = Room.get(Room.RIGHT)
         right.description = data['right_room']['description']
         if 'Открыть сундук' not in data['right_room']['actions']:
@@ -235,6 +252,7 @@ if __name__ == "__main__":
         Room.ENTRY: EntryRoom(),
         Room.LEFT: LeftRoom(),
         Room.RIGHT: RightRoom(),
+        Room.RIGHT_EMPTY: RightEmptyRoom(),  # Добавляем новую комнату
     }
     current_room = Room.ENTRY
     
