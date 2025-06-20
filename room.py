@@ -1,8 +1,10 @@
 import json
 import tkinter as tk
-from tkinter import scrolledtext, ttk
-import random  # Нужна для боя с монстром
+from tkinter import scrolledtext, ttk, messagebox
+import random
 import queue
+import os
+import sys
 
 class GameOutput:
     """Класс для дублирования вывода в консоль и окно Tkinter"""
@@ -10,6 +12,7 @@ class GameOutput:
         self.root = tk.Tk()
         self.root.title("Лесной Лабиринт")
         self.root.geometry("800x600")
+        self.root.protocol("WM_DELETE_WINDOW", self.safe_exit)  # Обработка закрытия окна
         
         # Основной фрейм для текстового вывода
         self.text_frame = ttk.Frame(self.root)
@@ -25,6 +28,32 @@ class GameOutput:
         )
         self.text_area.pack(expand=True, fill='both')
         self.text_area.configure(state='disabled')
+        
+        # Фрейм для кнопок управления
+        self.control_frame = ttk.Frame(self.root)
+        self.control_frame.pack(fill='x', padx=5, pady=(0, 5))
+        
+        # Кнопки управления
+        self.save_btn = ttk.Button(
+            self.control_frame,
+            text="Сохранить (s)",
+            command=self.save_game_direct
+        )
+        self.save_btn.pack(side='left', expand=True, padx=2)
+        
+        self.load_btn = ttk.Button(
+            self.control_frame,
+            text="Загрузить (o)",
+            command=self.load_game_direct
+        )
+        self.load_btn.pack(side='left', expand=True, padx=2)
+        
+        self.exit_btn = ttk.Button(
+            self.control_frame,
+            text="Выйти (0)",
+            command=self.safe_exit
+        )
+        self.exit_btn.pack(side='left', expand=True, padx=2)
         
         # Фрейм для ввода команд
         self.input_frame = ttk.Frame(self.root)
@@ -55,11 +84,52 @@ class GameOutput:
         # Очередь ввода для синхронизации
         self.input_queue = queue.Queue()
         self.waiting_for_input = False
+        self.should_exit = False
+
+    def save_game_direct(self):
+        """Непосредственное сохранение игры"""
+        try:
+            save_game()
+            self.print("Игра сохранена!")
+        except Exception as e:
+            self.print(f"Ошибка при сохранении: {str(e)}")
+
+    def load_game_direct(self):
+        """Непосредственная загрузка игры"""
+        try:
+            load_game()
+            self.print("Игра загружена!")
+            return -1  # Специальный код для перезагрузки комнаты
+        except Exception as e:
+            self.print(f"Ошибка при загрузке: {str(e)}")
+            return None
+
+    def safe_exit(self):
+        """Безопасный выход из игры"""
+        if messagebox.askokcancel("Выход", "Вы действительно хотите выйти из игры?"):
+            self.should_exit = True
+            # Отключаем все кнопки перед выходом
+            self.save_btn.config(state='disabled')
+            self.load_btn.config(state='disabled')
+            self.exit_btn.config(state='disabled')
+            self.submit_btn.config(state='disabled')
+            self.input_entry.config(state='disabled')
+            
+            # Плавное закрытие
+            self.root.after(100, self.cleanup_and_exit)
+
+    def cleanup_and_exit(self):
+        """Очистка и завершение"""
+        try:
+            self.root.destroy()
+        except:
+            pass
+        finally:
+            os._exit(0)  # Гарантированное завершение процесса
 
     def print(self, text):
         """Вывод текста и в консоль, и в окно"""
         print(text)
-        
         self.text_area.configure(state='normal')
         self.text_area.insert(tk.END, text + "\n")
         self.text_area.configure(state='disabled')
@@ -68,30 +138,35 @@ class GameOutput:
     
     def process_input(self, event=None):
         """Обработка ввода из GUI"""
+        if self.should_exit:
+            return
+            
         cmd = self.input_var.get().strip().lower()
         if cmd:
             self.input_queue.put(cmd)
             self.input_var.set("")
             if self.waiting_for_input:
-                self.root.quit()  # Выходим из цикла ожидания
+                self.root.quit()
     
     def get_input(self, prompt=None):
         """Получение ввода с поддержкой обоих интерфейсов"""
+        if self.should_exit:
+            return '0'
+            
         if prompt:
             self.print(prompt)
         
-        # Фокусируемся на поле ввода
         self.input_entry.focus_set()
         self.waiting_for_input = True
         
         try:
-            # Ожидаем ввода через очередь
             self.root.wait_variable(self.input_var)
             cmd = self.input_queue.get_nowait()
         except queue.Empty:
-            # Если очередь пуста, ждем снова
             self.root.mainloop()
             cmd = self.input_queue.get()
+        except:
+            cmd = '0'
         finally:
             self.waiting_for_input = False
         
@@ -634,8 +709,10 @@ if __name__ == "__main__":
     
     try:
         # Основной игровой цикл
-        while current_room and player.is_alive: # Добавили проверку на живой ли игрок
+        while not output.should_exit and current_room and player.is_alive:
             action_id = Room.get(current_room).enter()
+            if output.should_exit:
+                break
             if action_id == -1: # Перезагрузка комнаты после загрузки
                 continue
             elif action_id == Action.RIGHT_CHEST_OPEN:
@@ -659,8 +736,11 @@ if __name__ == "__main__":
                 current_room = action_id
         
         # Если игрок умер, ждем выхода из программы
-        while not player.is_alive:
+        while not player.is_alive and not output.should_exit:
             output.root.update()
             
     except KeyboardInterrupt:
-        output.root.destroy()
+        output.safe_exit()
+    except Exception as e:
+        print(f"Критическая ошибка: {str(e)}")
+        output.safe_exit()
