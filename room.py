@@ -1,7 +1,7 @@
 import json
 import tkinter as tk
 from tkinter import scrolledtext
-import random  # Добавим для боя с монстром
+import random  # Нужна для боя с монстром
 
 class GameOutput:
     """Класс для дублирования вывода в консоль и окно Tkinter"""
@@ -34,6 +34,7 @@ class Player:
         self.health = 100
         self.is_alive = True
         self.has_sword = False  # Флаг наличия меча для боя с монстром (меч увеличивает урон на +10)
+        self.has_key = False  # Флаг наличия ключа от верхней комнаты
     
     def take_damage(self, amount):
         """Уменьшение здоровья персонажа"""
@@ -81,13 +82,13 @@ player = Player()
 class Room: # Класс с комнатами
     all = {} # Словарь для хранения всех комнат
     ENTRY = 1  # Константа для начальной комнаты
-    LEFT = 2
-    RIGHT = 3
-    RIGHT_SIGN = 4  # Комната с предупреждающей табличкой
-    MONSTER_ROOM = 5  # Комната с монстром
-    RIGHT_CHEST = 6  # Комната с сундуком
-    SWORD_SIGN = 7  # Комната с информацией о мече
-    SWORD_ROOM = 8  # Комната с мечом
+    LEFT = 2  # Комната с лешим
+    RIGHT_SIGN = 3  # Комната с предупреждающей табличкой
+    MONSTER_ROOM = 4  # Комната с монстром
+    RIGHT_CHEST = 5  # Комната с сундуком
+    SWORD_SIGN = 6  # Комната с информацией о мече
+    SWORD_ROOM = 7  # Комната с мечом
+    UPPER_ROOM = 8  # Верхняя комната с выходом из лабиринта
 
     @staticmethod # Создание функции которую можно вызвать напрямую из класса, без использования объекта
     def get(room_code):
@@ -131,10 +132,12 @@ class Room: # Класс с комнатами
                 output.print("Неизвестная команда. Попробуйте еще раз.")
 
 class Action:
-    RIGHT_CHEST_OPEN = 1000
-    LEFT_GIVE_ITEM = 1001
+    RIGHT_CHEST_OPEN = 1000  # Действие - открытие сундука с сокровищами
+    LEFT_GIVE_ITEM = 1001  # Действие - передача трости
     DEFEAT_MONSTER = 1002  # Действие - победа над монстром
     GET_SWORD = 1003  # Действие - получение меча
+    UNLOCK_DOOR = 1004  # Действие - открытие двери в верхнюю комнату
+    ESCAPE_LABYRINTH = 1005  # Действие - побег из лабиринта
 
     def __init__(self, description, param, result=''):
         self.description = description
@@ -146,7 +149,7 @@ class EntryRoom(Room):
         super().__init__('''Вход в лабиринт.
    Лестница вниз, от которой есть двери направо и налево.
    Также есть темный проход вниз по скрипучей лестнице.''',
-       [ Action("Пойти направо", Room.RIGHT_SIGN),  # Теперь ведет в комнату с табличкой
+       [ Action("Пойти направо", Room.RIGHT_SIGN),  # Ведет в комнату с табличкой
          Action("Пойти налево", Room.LEFT),
          Action("Спуститься вниз", Room.SWORD_SIGN)])
 
@@ -214,7 +217,7 @@ class MonsterRoom(Room):
     def __init__(self):
         super().__init__('''Темная сырая комната с костями на полу. В центре стоит жуткий Упырь!
    Его красные глаза горят в темноте, а длинные когти скребут по камням.''',
-       [ Action("Атаковать монстра", Room.MONSTER_ROOM),  # Будем обрабатывать отдельно
+       [ Action("Атаковать монстра", Room.MONSTER_ROOM),  # Обрабатывается отдельно
          Action("Попытаться убежать", Room.RIGHT_SIGN), ])  # Бегство возвращает в комнату с табличкой
         self.monster_defeated = False
 
@@ -325,6 +328,8 @@ class LeftRoom(Room):
    Леший: "Прииивееет...... Тыы хтоооо? Виииделлл мооою троооость?"''',
        [ Action("Нет не видел", Room.LEFT),
          Action("Вернуться", Room.ENTRY), ])
+        self.door_unlocked = False  # Флаг открытия двери в верхнюю комнату
+        self.has_given_key = False  # Флаг, что леший уже дал ключ
 
     def got_item(self):
         """Обновляем комнату после получения трости"""
@@ -337,14 +342,91 @@ class LeftRoom(Room):
     
     def give_item(self):
         """Отдаем трость лешему"""
-        output.print('''  Леший в благодарность, полностью излечивает игрока.
-  После чего с широкой улыбкой радостный леший опираясь на свою трость, вприпрыжку ускакивает в чащу леса''')
+        output.print('''  Леший в благодарность, полностью излечивает игрока.''')
+        
+        # Леший дает ключ от верхней комнаты
+        if not self.has_given_key:
+            output.print('''\n  Перед тем как уйти, леший достает из кармана старинный ключ с таинственным узором, украшенный драгоценным рубином,
+  и протягивает его вам со словами:
+  "Возьмиии... Пригодииится..."''')
+            player.has_key = True
+            self.has_given_key = True
+
+        output.print('''  После чего радостный леший с широкой улыбкой, опираясь на свою трость, вприпрыжку ускакивает в чащу леса.
+  Когда леший ушел, вы замечаете старинную дверь в стене, которая раньше была скрыта за его спиной.
+  На двери висит замок с затейливым узором.''')
+        
         # Полное исцеление после помощи лешему
         player.heal(player.max_health)
-        self.description = '''Тихая пустынная комната'''
+        self.door_unlocked = True  # Дверь можно открыть
+        
+        self.description = '''Тихая пустынная комната. В стене видна старинная дверь с замком.'''
         self.actions = [
+            Action("Попробовать открыть дверь", Action.UNLOCK_DOOR) if player.has_key else 
+            Action("Осмотреть дверь (заперта)", Room.LEFT),
             Action("Вернуться", Room.ENTRY),
         ]
+
+class UpperRoom(Room):
+    """Верхняя комната с выходом из лабиринта"""
+    def __init__(self):
+        super().__init__('''Просторная светлая комната с высокими потолками. 
+   В противоположной стене виден яркий свет, пробивающийся через выход наружу.
+   
+   Вы чувствуете свежий ветерок и слышите пение птиц - это точно выход из лабиринта!
+   
+   === ВЫ НАШЛИ ВЫХОД ИЗ ЛАБИРИНТА! ===
+   
+   Пройдя через выход, вы оказываетесь на солнечной поляне. 
+   Лабиринт остался позади, а впереди вас ждут новые приключения!
+   
+   Поздравляем с успешным прохождением игры!''',
+       [
+           Action("Завершить игру", 0),  # Предлагается выйти из игры
+           Action("Осмотреться вокруг", Room.UPPER_ROOM)  # Можно остаться и осмотреться
+       ])
+        self.escaped = False  # Флаг, что игрок нашел выход
+
+    def enter(self):
+        """Переопределяем enter, чтобы показать сообщение о победе только один раз"""
+        if not self.escaped:
+            output.print('''\n=== ВЫ НАШЛИ ВЫХОД ИЗ ЛАБИРИНТА! ===
+            
+  Пройдя через выход, вы оказываетесь на солнечной поляне. 
+  Лабиринт остался позади, а впереди вас ждут новые приключения!
+  
+  Поздравляем с успешным прохождением игры!''')
+            self.escaped = True
+        
+        # Показываем стандартное описание комнаты и действия
+        health_status = player.get_health_status()
+        output.print(f"[Состояние: {health_status}, Здоровье: {player.health}/{player.max_health}]")
+        output.print(f">> {self.description}\n")
+        output.print("Возможные действия:")
+        for id, action in enumerate(self.actions):
+            output.print(f"{id+1} {action.description}")
+        
+        # Обработка ввода пользователя
+        while True:
+            command = input("Ваше действие (0 - выход, s - сохранить, o - загрузить): ").strip().lower()
+            if command == 's':
+                save_game()
+                output.print("Игра сохранена!")
+                continue
+            elif command == 'o':
+                load_game()
+                output.print("Игра загружена!")
+                return -1 # Специальный код для перезагрузки комнаты
+            elif command.isdigit():
+                command = int(command)
+                if command == 0:
+                    output.print("\n")
+                    return 0
+                elif 1 <= command <= len(self.actions):
+                    output.print("\n")
+                    return self.actions[command-1].param
+            else:
+                output.print("Неизвестная команда. Попробуйте еще раз.")
 
 def save_game():
     """Сохранение состояния игры"""
@@ -375,13 +457,20 @@ def save_game():
         },
         'left_room': {
             'description': Room.get(Room.LEFT).description,
-            'actions': [a.description for a in Room.get(Room.LEFT).actions]
+            'actions': [a.description for a in Room.get(Room.LEFT).actions],
+            'door_unlocked': Room.get(Room.LEFT).door_unlocked
+        },
+        'upper_room': {
+            'description': Room.get(Room.UPPER_ROOM).description,
+            'actions': [a.description for a in Room.get(Room.UPPER_ROOM).actions],
+            'escaped': Room.get(Room.UPPER_ROOM).escaped
         },
         'player': {
             'health': player.health,
             'max_health': player.max_health,
             'is_alive': player.is_alive,
-            'has_sword': player.has_sword
+            'has_sword': player.has_sword,
+            'has_key': player.has_key
         }
     }
     with open('save.json', 'w', encoding='utf-8') as f:
@@ -401,6 +490,7 @@ def load_game():
         player.max_health = data['player']['max_health']
         player.is_alive = data['player']['is_alive']
         player.has_sword = data['player'].get('has_sword', False)
+        player.has_key = data['player'].get('has_key', False)
         
         # Восстанавливаем состояние комнаты с мечем
         Room.get(Room.SWORD_SIGN).description = data['sword_sign_room']['description']
@@ -428,15 +518,29 @@ def load_game():
         # Восстанавливаем состояние левой комнаты
         left_room = Room.get(Room.LEFT)
         left_room.description = data['left_room']['description']
+        left_room.door_unlocked = data['left_room'].get('door_unlocked', False)
+        
         if 'Отдать трость' in data['left_room']['actions']:
             left_room.actions = [
                 Action("Отдать трость", Action.LEFT_GIVE_ITEM),
+                Action("Вернуться", Room.ENTRY),
+            ]
+        elif left_room.door_unlocked:
+            left_room.actions = [
+                Action("Попробовать открыть дверь", Action.UNLOCK_DOOR) if player.has_key else 
+                Action("Осмотреть дверь (заперта)", Room.LEFT),
                 Action("Вернуться", Room.ENTRY),
             ]
         elif len(left_room.actions) > 1 and 'Нет не видел' not in data['left_room']['actions']:
             left_room.actions = [
                 Action("Вернуться", Room.ENTRY),
             ]
+        
+        # Восстанавливаем состояние комнаты с выходом из лабиринта
+        if Room.UPPER_ROOM in Room.all:
+            upper_room = Room.get(Room.UPPER_ROOM)
+            upper_room.description = data['upper_room']['description']
+            upper_room.escaped = data['upper_room'].get('escaped', False)
     except FileNotFoundError:
         output.print("Сохранение не найдено")
     except Exception as e:
@@ -450,8 +554,9 @@ if __name__ == "__main__":
         Room.RIGHT_SIGN: RightSignRoom(),
         Room.MONSTER_ROOM: MonsterRoom(),  # Комната с монстром
         Room.RIGHT_CHEST: RightChestRoom(),
-        Room.SWORD_SIGN: SwordSignRoom(),  # Новая комната с информацией о наличии меча
-        Room.SWORD_ROOM: SwordRoom()       # Комната с мечом
+        Room.SWORD_SIGN: SwordSignRoom(),  # Комната с информацией о наличии меча
+        Room.SWORD_ROOM: SwordRoom(),      # Комната с мечом
+        Room.UPPER_ROOM: UpperRoom()       # Комната с выходом из лабиринта
     }
     current_room = Room.ENTRY
     
@@ -469,6 +574,15 @@ if __name__ == "__main__":
                 Room.get(Room.MONSTER_ROOM).monster_defeated = True
             elif action_id == Action.GET_SWORD:
                 Room.get(Room.SWORD_ROOM).take_sword()
+            elif action_id == Action.UNLOCK_DOOR:
+                if player.has_key:
+                    output.print('''  Ключ идеально подошел к замку! Дверь со скрипом открывается, 
+  обнажая узкую винтовую лестницу, ведущую наверх.''')
+                    current_room = Room.UPPER_ROOM
+                else:
+                    output.print("У вас нет подходящего ключа для этой двери.")
+            elif action_id == Action.ESCAPE_LABYRINTH:
+                Room.get(Room.UPPER_ROOM).escape()
             else:
                 current_room = action_id
         
