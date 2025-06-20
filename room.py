@@ -1,19 +1,61 @@
 import json
 import tkinter as tk
-from tkinter import scrolledtext
+from tkinter import scrolledtext, ttk
 import random  # Нужна для боя с монстром
+import queue
 
 class GameOutput:
     """Класс для дублирования вывода в консоль и окно Tkinter"""
     def __init__(self):
         self.root = tk.Tk()
         self.root.title("Лесной Лабиринт")
-        self.root.geometry("600x400")
+        self.root.geometry("800x600")
         
-        self.text_area = scrolledtext.ScrolledText(self.root, wrap=tk.WORD)
+        # Основной фрейм для текстового вывода
+        self.text_frame = ttk.Frame(self.root)
+        self.text_frame.pack(expand=True, fill='both', padx=5, pady=5)
+        
+        # Текстовая область с прокруткой
+        self.text_area = scrolledtext.ScrolledText(
+            self.text_frame, 
+            wrap=tk.WORD,
+            font=('Courier New', 10),
+            padx=5,
+            pady=5
+        )
         self.text_area.pack(expand=True, fill='both')
         self.text_area.configure(state='disabled')
         
+        # Фрейм для ввода команд
+        self.input_frame = ttk.Frame(self.root)
+        self.input_frame.pack(fill='x', padx=5, pady=(0, 5))
+        
+        # Метка для поля ввода
+        self.input_label = ttk.Label(self.input_frame, text="Ваше действие:")
+        self.input_label.pack(side='left', padx=(0, 5))
+        
+        # Поле ввода команд
+        self.input_var = tk.StringVar()
+        self.input_entry = ttk.Entry(
+            self.input_frame, 
+            textvariable=self.input_var,
+            font=('Courier New', 10)
+        )
+        self.input_entry.pack(side='left', expand=True, fill='x')
+        self.input_entry.bind('<Return>', self.process_input)
+        
+        # Кнопка отправки
+        self.submit_btn = ttk.Button(
+            self.input_frame, 
+            text="Отправить", 
+            command=self.process_input
+        )
+        self.submit_btn.pack(side='left', padx=(5, 0))
+        
+        # Очередь ввода для синхронизации
+        self.input_queue = queue.Queue()
+        self.waiting_for_input = False
+
     def print(self, text):
         """Вывод текста и в консоль, и в окно"""
         print(text)
@@ -23,6 +65,37 @@ class GameOutput:
         self.text_area.configure(state='disabled')
         self.text_area.see(tk.END)
         self.root.update()
+    
+    def process_input(self, event=None):
+        """Обработка ввода из GUI"""
+        cmd = self.input_var.get().strip().lower()
+        if cmd:
+            self.input_queue.put(cmd)
+            self.input_var.set("")
+            if self.waiting_for_input:
+                self.root.quit()  # Выходим из цикла ожидания
+    
+    def get_input(self, prompt=None):
+        """Получение ввода с поддержкой обоих интерфейсов"""
+        if prompt:
+            self.print(prompt)
+        
+        # Фокусируемся на поле ввода
+        self.input_entry.focus_set()
+        self.waiting_for_input = True
+        
+        try:
+            # Ожидаем ввода через очередь
+            self.root.wait_variable(self.input_var)
+            cmd = self.input_queue.get_nowait()
+        except queue.Empty:
+            # Если очередь пуста, ждем снова
+            self.root.mainloop()
+            cmd = self.input_queue.get()
+        finally:
+            self.waiting_for_input = False
+        
+        return cmd
 
 # Создаем глобальный объект для вывода
 output = GameOutput()
@@ -111,7 +184,7 @@ class Room: # Класс с комнатами
         
         # Обработка ввода пользователя
         while True:
-            command = input("Ваше действие (0 - выход, s - сохранить, o - загрузить): ").strip().lower()
+            command = output.get_input("Ваше действие (0 - выход, s - сохранить, o - загрузить): ").strip().lower()
             if command == 's':
                 save_game()
                 output.print("Игра сохранена!")
@@ -198,7 +271,7 @@ class SwordRoom(Room):
         self.description = '''Крошечная комната с пустым пьедесталом.
    Меч уже у вас!'''
         self.actions = [Action("Вернуться", Room.SWORD_SIGN)]
-        output.print("Теперь ваши атаки будут сильнее!")
+        output.print("  Теперь ваши атаки будут сильнее!")
 
 class RightSignRoom(Room):
     """Комната с предупреждающей табличкой перед комнатой с монстром"""
@@ -235,7 +308,7 @@ class MonsterRoom(Room):
             output.print("2 Вернуться")
             
             while True:
-                cmd = input("Ваш выбор: ").strip().lower()
+                cmd = output.get_input("\nВаше действие (0 - выход, s - сохранить, o - загрузить): ")
                 if cmd == '1':
                     return Room.RIGHT_CHEST
                 elif cmd == '2':
@@ -257,15 +330,15 @@ class MonsterRoom(Room):
             output.print("\n1. Атаковать")
             output.print("2. Попытаться убежать (50% шанс)")
             
-            choice = input("Ваш выбор: ").strip().lower()
+            choice = output.get_input("Ваш выбор: ")
             if choice == '1':
                 # Игрок атакует
                 player_damage = random.randint(5, 15)
                 if player.has_sword:
                     player_damage += 10  # Меч увеличивает урон
-                    output.print(f"Вы бьете мечом и наносите {player_damage} урона! ({player_damage-10}+10)")
+                    output.print(f"\nВы бьете мечом и наносите {player_damage} урона! ({player_damage-10}+10)")
                 else:
-                    output.print(f"Вы бьете кулаками и наносите {player_damage} урона!")
+                    output.print(f"\nВы бьете кулаками и наносите {player_damage} урона!")
                 monster_health -= player_damage
                 
                 # Монстр атакует в ответ
@@ -279,10 +352,10 @@ class MonsterRoom(Room):
             elif choice == '2':
                 # Попытка убежать
                 if random.random() < 0.5:  # 50% шанс побега
-                    output.print("Вы успешно убежали от Упыря!")
+                    output.print("\nВы успешно убежали от Упыря!")
                     return Room.RIGHT_SIGN
                 else:
-                    output.print("Упырь перехватил вас!")
+                    output.print("\nУпырь перехватил вас!")
                     monster_damage = random.randint(10, 15)
                     player.take_damage(monster_damage)
                     output.print(f"Упырь кусает вас, нанося {monster_damage} урона!")
@@ -346,15 +419,14 @@ class LeftRoom(Room):
         
         # Леший дает ключ от верхней комнаты
         if not self.has_given_key:
-            output.print('''\n  Перед тем как уйти, леший достает из кармана старинный ключ с таинственным узором, украшенный драгоценным рубином,
-  и протягивает его вам со словами:
+            output.print('''\n  Перед тем как уйти, леший достает из кармана старинный ключ с таинственным узором, украшенный драгоценным рубином, и протягивает его вам со словами:
   "Возьмиии... Пригодииится..."''')
             player.has_key = True
             self.has_given_key = True
 
-        output.print('''  После чего радостный леший с широкой улыбкой, опираясь на свою трость, вприпрыжку ускакивает в чащу леса.
+        output.print('''\n  После чего радостный леший с широкой улыбкой, опираясь на свою трость, вприпрыжку ускакивает в чащу леса.
   Когда леший ушел, вы замечаете старинную дверь в стене, которая раньше была скрыта за его спиной.
-  На двери висит замок с затейливым узором.''')
+  На двери висит замок с затейливым узором.\n''')
         
         # Полное исцеление после помощи лешему
         player.heal(player.max_health)
@@ -408,7 +480,7 @@ class UpperRoom(Room):
         
         # Обработка ввода пользователя
         while True:
-            command = input("Ваше действие (0 - выход, s - сохранить, o - загрузить): ").strip().lower()
+            command = output.get_input("Ваше действие (0 - выход, s - сохранить, o - загрузить): ")
             if command == 's':
                 save_game()
                 output.print("Игра сохранена!")
