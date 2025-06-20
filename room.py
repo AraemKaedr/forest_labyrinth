@@ -368,6 +368,7 @@ class MonsterRoom(Room):
        [ Action("Атаковать монстра", Room.MONSTER_ROOM),  # Обрабатывается отдельно
          Action("Попытаться убежать", Room.RIGHT_SIGN), ])  # Бегство возвращает в комнату с табличкой
         self.monster_defeated = False
+        self.monster_health = 50  # Начальное здоровье монстра
 
     def enter(self):
         """Особая логика enter для комнаты с монстром и обработки боя"""
@@ -377,7 +378,7 @@ class MonsterRoom(Room):
         
         # Проверяем, жив ли монстр (если нет - пропускаем бой)
         if self.monster_defeated:
-            output.print("Тело Упыря лежит на полу, издавая зловоние.")
+            output.print("Тело Упыря лежит на полу, издавая зловоние.\n")
             output.print("Возможные действия:")
             output.print("1 Пройти дальше в комнату с сокровищем")
             output.print("2 Вернуться")
@@ -396,12 +397,11 @@ class MonsterRoom(Room):
 
     def fight_monster(self):
         """Обработка боя с Упырем"""
-        monster_health = 50  # Здоровье монстра
         
         output.print("=== БОЙ С УПЫРЕМ ===")
-        output.print(f"Упырь: {monster_health} здоровья | Вы: {player.health} здоровья")
+        output.print(f"Упырь: {self.monster_health} здоровья | Вы: {player.health} здоровья")
         
-        while monster_health > 0 and player.is_alive:
+        while self.monster_health > 0 and player.is_alive:
             output.print("\n1. Атаковать")
             output.print("2. Попытаться убежать (50% шанс)")
             
@@ -414,15 +414,15 @@ class MonsterRoom(Room):
                     output.print(f"\nВы бьете мечом и наносите {player_damage} урона! ({player_damage-10}+10)")
                 else:
                     output.print(f"\nВы бьете кулаками и наносите {player_damage} урона!")
-                monster_health -= player_damage
+                self.monster_health -= player_damage
                 
                 # Монстр атакует в ответ
-                if monster_health > 0:
+                if self.monster_health > 0:
                     monster_damage = random.randint(8, 12)
                     player.take_damage(monster_damage)
                     output.print(f"Упырь царапает вас, нанося {monster_damage} урона!")
                 
-                output.print(f"Упырь: {max(0, monster_health)} здоровья | Вы: {player.health} здоровья")
+                output.print(f"Упырь: {max(0, self.monster_health)} здоровья | Вы: {player.health} здоровья")
             
             elif choice == '2':
                 # Попытка убежать
@@ -438,7 +438,7 @@ class MonsterRoom(Room):
             if player.health <= 0:
                 return 0  # Игрок умер
         
-        if monster_health <= 0:
+        if self.monster_health <= 0:
             output.print("\n=== ВЫ ПОБЕДИЛИ УПЫРЯ! ===")
             output.print("Теперь вы можете пройти в комнату с сокровищем!")
             self.monster_defeated = True
@@ -595,7 +595,8 @@ def save_game():
         'monster_room': {
             'description': Room.get(Room.MONSTER_ROOM).description,
             'actions': [a.description for a in Room.get(Room.MONSTER_ROOM).actions],
-            'monster_defeated': Room.get(Room.MONSTER_ROOM).monster_defeated
+            'monster_defeated': Room.get(Room.MONSTER_ROOM).monster_defeated,
+            'monster_health': Room.get(Room.MONSTER_ROOM).monster_health
         },
         'right_chest_room': {
             'description': Room.get(Room.RIGHT_CHEST).description,
@@ -654,6 +655,7 @@ def load_game():
         monster_room = Room.get(Room.MONSTER_ROOM)
         monster_room.description = data['monster_room']['description']
         monster_room.monster_defeated = data['monster_room']['monster_defeated']
+        monster_room.monster_health = data['monster_room'].get('monster_health', 50)
         
         # Восстанавливаем состояние комнаты с сундуком
         right_chest = Room.get(Room.RIGHT_CHEST)
